@@ -24,9 +24,10 @@ def check_password():
     if st.session_state.authenticated:
         return True
 
-    password = st.text_input("Password", type="password")
-    if st.button("Login"):
-        # Default password — change via env var in production
+    with st.form("login"):
+        password = st.text_input("Password", type="password")
+        submitted = st.form_submit_button("Login")
+    if submitted:
         import os
         correct = os.getenv("APP_PASSWORD", "nuclear2024")
         if password == correct:
