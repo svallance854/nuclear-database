@@ -1,0 +1,10 @@
+streamlit
+pandas
+requests
+beautifulsoup4
+pdfplumber
+python-dotenv
+apscheduler
+openpyxl
+flask
+flask-cors
