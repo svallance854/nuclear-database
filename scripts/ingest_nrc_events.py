@@ -108,10 +108,13 @@ def parse_rss_feed(url: str) -> list[dict]:
 
 
 def scrape_news_page() -> list[dict]:
-    """Fallback: scrape the NRC news page directly."""
-    logger.info("Scraping NRC news page: %s", NRC_NEWS_URL)
+    """Fallback: scrape NRC news releases for the current year."""
+    from datetime import date
+    year = date.today().year
+    year_url = f"https://www.nrc.gov/reading-rm/doc-collections/news/{year}/"
+    logger.info("Scraping NRC news page: %s", year_url)
     try:
-        resp = requests.get(NRC_NEWS_URL, timeout=30)
+        resp = requests.get(year_url, timeout=30)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
 
@@ -121,16 +124,30 @@ def scrape_news_page() -> list[dict]:
             text = link.get_text(strip=True)
             if not text or len(text) < 20:
                 continue
-            # Look for press release links
-            if "/news/" in href and (href.endswith(".html") or href.endswith(".htm")):
+            # Press release links typically contain the year and end with .html
+            if href.endswith(".html") or href.endswith(".htm"):
                 if not href.startswith("http"):
                     href = "https://www.nrc.gov" + href
+                # Extract date from link text if present (e.g. "January 15, 2026")
+                event_date = None
+                date_match = re.search(
+                    r"(\w+ \d{1,2},?\s*\d{4})", text
+                )
+                if date_match:
+                    for fmt in ["%B %d, %Y", "%B %d %Y"]:
+                        try:
+                            dt = datetime.strptime(date_match.group(1), fmt)
+                            event_date = dt.strftime("%Y-%m-%d")
+                            break
+                        except ValueError:
+                            continue
+
                 full_text = text
                 items.append({
                     "title": text[:500],
                     "description": "",
                     "source_url": href,
-                    "event_date": None,
+                    "event_date": event_date,
                     "event_type": classify_event(full_text),
                     "docket": extract_docket(full_text),
                 })

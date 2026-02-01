@@ -42,7 +42,14 @@ def fetch_and_parse():
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
 
-    table = soup.find("table")
+    tables = soup.find_all("table")
+    # The data table has 8-column header row; skip layout tables
+    table = None
+    for t in tables:
+        first_row = t.find("tr")
+        if first_row and len(first_row.find_all(["th", "td"])) >= 8:
+            table = t
+            break
     if not table:
         logger.error("Could not find decommissioning table on NRC page")
         return []
@@ -54,23 +61,24 @@ def fetch_and_parse():
         if len(cells) < 3:
             continue
         try:
+            # Column layout: Name | Acronym | Docket | License | ISFSI | PM | Location | License Status
             name = cells[0].get_text(strip=True)
             link = cells[0].find("a")
-            docket = None
-            if link and link.get("href"):
+
+            # Docket is in column 2 (index 2)
+            docket_text = cells[2].get_text(strip=True) if len(cells) > 2 else ""
+            docket = parse_docket(docket_text)
+            if not docket and link and link.get("href"):
                 docket = parse_docket(link["href"])
 
-            # Some pages have docket in a separate column
-            if not docket and len(cells) > 1:
-                docket = parse_docket(cells[1].get_text(strip=True))
+            # Location is column 6
+            location = cells[6].get_text(strip=True) if len(cells) > 6 else ""
+            # License Status is column 7 (SAFSTOR, DECON, etc.)
+            status_raw = cells[7].get_text(strip=True).lower() if len(cells) > 7 else ""
 
-            location = cells[1].get_text(strip=True) if len(cells) > 1 else ""
-            status_raw = cells[2].get_text(strip=True).lower() if len(cells) > 2 else ""
-            reactor_type_raw = cells[3].get_text(strip=True) if len(cells) > 3 else ""
-
-            # Extract state from location (last two-letter word or after comma)
+            # Extract state from location (e.g. "Middletown, PA")
             state = "Unknown"
-            state_match = re.search(r"\b([A-Z]{2})\b", cells[1].get_text(strip=True) if len(cells) > 1 else "")
+            state_match = re.search(r",\s*([A-Z]{2})\b", location)
             if state_match:
                 state = state_match.group(1)
 
@@ -86,22 +94,16 @@ def fetch_and_parse():
                     site_type = val
                     break
 
-            reactor_type = "Other"
-            if "PWR" in reactor_type_raw.upper():
-                reactor_type = "PWR"
-            elif "BWR" in reactor_type_raw.upper():
-                reactor_type = "BWR"
-
             entries.append({
                 "name": name,
-                "site_name": re.sub(r"\s*,?\s*(Unit\s*)?\d+\s*$", "", name).strip(),
+                "site_name": re.sub(r"\s*[-–]\s*(Unit\s*)?\d+\s*$", "", name).strip(),
                 "docket": docket,
                 "location": location,
                 "state": state,
                 "status_raw": status_raw,
                 "reactor_status": reactor_status,
                 "site_type": site_type,
-                "reactor_type": reactor_type,
+                "reactor_type": "Other",
             })
         except Exception as e:
             logger.warning("Error parsing row: %s — %s", row.get_text(strip=True)[:80], e)

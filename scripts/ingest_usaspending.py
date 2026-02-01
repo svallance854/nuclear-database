@@ -49,12 +49,15 @@ def fetch_contracts(naics_code: str, page: int = 1, limit: int = 100) -> list[di
         return []
 
 
+AGENCY_KEYWORDS = ["ENERGY", "NUCLEAR", "DEFENSE", "ARMY", "NAVY"]
+
+
 def is_nuclear_agency(agency: str) -> bool:
-    """Check if the awarding agency is one we care about."""
+    """Check if the awarding agency is relevant (DOE, NRC, DOD)."""
     if not agency:
         return False
     agency_upper = agency.upper()
-    return any(a in agency_upper for a in NUCLEAR_AGENCIES)
+    return any(kw in agency_upper for kw in AGENCY_KEYWORDS)
 
 
 def find_or_create_company(conn, name: str) -> int:

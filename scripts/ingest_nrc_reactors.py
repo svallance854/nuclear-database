@@ -68,40 +68,36 @@ def fetch_and_parse():
     reactors = []
     for row in rows:
         cells = row.find_all("td")
-        if len(cells) < 7:
+        if len(cells) < 4:
             continue
         try:
-            name = cells[0].get_text(strip=True)
-            # Try to extract docket link
+            # Column layout: Plant Name/Docket | License | Reactor Type | Location | Owner/Operator | Region
+            name_text = cells[0].get_text(strip=True)
+            # Docket is in parentheses like "Arkansas Nuclear 1 (05000313)"
+            docket = parse_docket(name_text)
+            # Also check link href
             link = cells[0].find("a")
-            docket = None
-            if link and link.get("href"):
+            if not docket and link and link.get("href"):
                 docket = parse_docket(link["href"])
-
-            # Docket number is sometimes in its own column
-            docket_text = cells[1].get_text(strip=True) if len(cells) > 1 else ""
-            if not docket:
-                docket = parse_docket(docket_text)
+            # Strip docket from name
+            name = re.sub(r"\s*\(\d+\)\s*$", "", name_text).strip()
 
             reactor_type_raw = cells[2].get_text(strip=True) if len(cells) > 2 else ""
             reactor_type = REACTOR_TYPE_MAP.get(reactor_type_raw, "Other")
 
-            capacity_text = cells[3].get_text(strip=True) if len(cells) > 3 else ""
-            capacity = None
-            cap_match = re.search(r"[\d,]+\.?\d*", capacity_text.replace(",", ""))
-            if cap_match:
-                capacity = float(cap_match.group(0))
+            location = cells[3].get_text(strip=True) if len(cells) > 3 else ""
+            owner = cells[4].get_text(strip=True) if len(cells) > 4 else ""
 
-            location = cells[4].get_text(strip=True) if len(cells) > 4 else ""
-            owner = cells[5].get_text(strip=True) if len(cells) > 5 else ""
-            license_exp = cells[6].get_text(strip=True) if len(cells) > 6 else None
-
-            # Parse state from location
+            # Parse state from location (e.g. "6 miles WNW of Russellville, AR")
             state = ""
-            for state_name, abbrev in US_STATE_ABBREVS.items():
-                if state_name in location or abbrev in location.split():
-                    state = abbrev
-                    break
+            state_match = re.search(r",\s*([A-Z]{2})\b", location)
+            if state_match:
+                state = state_match.group(1)
+            else:
+                for state_name, abbrev in US_STATE_ABBREVS.items():
+                    if state_name in location:
+                        state = abbrev
+                        break
 
             reactors.append({
                 "name": name,
@@ -109,11 +105,11 @@ def fetch_and_parse():
                 "unit_number": parse_unit_number(name),
                 "docket": docket,
                 "reactor_type": reactor_type,
-                "capacity_mw": capacity,
+                "capacity_mw": None,
                 "location": location,
                 "state": state or "Unknown",
                 "owner": owner,
-                "license_expiration_date": license_exp,
+                "license_expiration_date": None,
             })
         except Exception as e:
             logger.warning("Error parsing row: %s — %s", row.get_text(strip=True)[:80], e)
